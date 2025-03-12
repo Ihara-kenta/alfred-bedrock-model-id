@@ -25,6 +25,11 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
+      - name: Update models.yaml
+        run: |
+          chmod +x ./list_models.sh
+          ./list_models.sh
+
       - name: Check for changes
         id: check_changes
         run: |
