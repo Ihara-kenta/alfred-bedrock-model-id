@@ -1,0 +1,77 @@
+name: Daily PR for models.yaml
+
+on:
+  schedule:
+    # Run at 9:00 AM JST (0:00 UTC)
+    - cron: '0 0 * * *'
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Create branch
+        run: git checkout -b update-models
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Check for changes
+        id: check_changes
+        run: |
+          git diff --quiet assets/models.yaml || echo "changes=true" >> $GITHUB_OUTPUT
+      
+      - name: Set current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Commit changes
+        if: steps.check_changes.outputs.changes == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add assets/models.yaml
+          git commit -m "Update models.yaml - ${{ steps.date.outputs.date }}"
+
+      - name: Push changes
+        if: steps.check_changes.outputs.changes == 'true'
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: update-models
+                
+      - name: Check for existing PRs
+        if: steps.check_changes.outputs.changes == 'true'
+        id: check_prs
+        run: |
+          # Check for PRs with title starting with "Daily update: models.yaml"
+          PR_COUNT=$(gh pr list --search "Daily update: models.yaml in:title" --state open --json number | jq length)
+          
+          if [ "$PR_COUNT" -gt 0 ]; then
+            echo "existing_pr=true" >> $GITHUB_OUTPUT
+          else
+            echo "existing_pr=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Pull Request
+        if: steps.check_changes.outputs.changes == 'true' && steps.check_prs.outputs.existing_pr != 'true'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: Update models.yaml
+          title: "Daily update: models.yaml - ${{ steps.date.outputs.date }}"
+          body: |
+            This is an automated PR to update the models.yaml file.
+          branch: update-models
+          base: main
